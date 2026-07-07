@@ -8,6 +8,4 @@ University of Edinburgh | **[🔗 Project Page](https://jakubzadrozny.github.io/
 
 <img src="./teaser-grid.webp">
 
-This repository will contain the official implementation of **_[BAT3R](https://jakubzadrozny.github.io/bat3r/)_** using [PyTorch](https://pytorch.org/).
-
 **Code is coming soon!** (Leave a ⭐️ if you're interested!)
