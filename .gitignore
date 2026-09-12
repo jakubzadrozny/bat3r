@@ -1,0 +1,21 @@
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+
+# Checkpoints and logs
+checkpoints/
+outputs/
+wandb/
+*.log
+
+# Data
+data/
+*.ply
+*.obj
+
+# OS
+.DS_Store
+*.swp

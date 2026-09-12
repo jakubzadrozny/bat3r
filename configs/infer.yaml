@@ -1,0 +1,50 @@
+model:
+  _target_: bat3r.models.SequentialUnet
+  resolution: ${resolution}
+  in_channels: 64
+  image_conditioning_stage2: false
+  model_channels: 128
+  detach_conditioning: true
+  num_layers: 4
+  channels_per_layer: 8
+  model_overrides:
+    num_blocks: 2
+    attn_resolutions:
+      - 16
+
+module:
+  _target_: bat3r.pointmaps.PointmapModule
+  render_on_module: true
+  soft_label: 0.01
+  model: ${model}
+  device: ${device}
+
+log_dir: checkpoints/bat3r_model
+ckpt_name: weights_80000.pth
+dataset_root: data
+
+data_split_file: dist_group_data_split.npz
+split: test
+
+confidence_threshold: 2.0
+device: cuda
+batch_size: 8
+resolution: 160
+num_layers: 4
+
+dataset:
+  _target_: bat3r.alt_dataset.RasterizeDataset
+  root: ${dataset_root} # path to base directory of dataset
+  image_size: ${resolution}
+  num_layers: ${num_layers}
+  input_mode: "sd_dino"
+  render_at_load: false
+  scale_targets: false
+  return_pcs: true
+
+dataloader:
+  _target_: torch.utils.data.DataLoader
+  dataset: ???
+  batch_size: ${batch_size}
+  num_workers: 4
+  shuffle: false

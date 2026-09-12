@@ -1,0 +1,120 @@
+hydra:
+  output_subdir: null # disables the .hydra folder
+  run:
+    dir: . # sets output dir to current dir (or use null if allowed)
+  job_logging:
+    root:
+      level: ERROR
+wandb:
+  enabled: false
+  dir: ???
+  project: ???
+  tags: []
+
+seed: 42
+resolution: 160
+model_channels: 128
+image_channels: 64
+num_layers: 4
+layer_channels: 8
+
+# set this to the downloaded dataset_root eg /path/to/data
+val_dataset_root: data
+dataset_root: data
+data_split_file: dist_group_data_split.npz
+train_clusters: [0, 1, 2, 3, 4]
+
+train_config:
+  steps: 100000
+  save_every: 10000
+  val_every: 20
+  log_every: 20
+  gradient_clip_value: 1.0
+  batch_size: 12
+  use_weights: null
+
+  # save location of weights
+  save_path: checkpoints/bat3r_model
+
+model:
+  _target_: bat3r.models.SequentialUnet
+  resolution: ${resolution}
+  in_channels: ${image_channels}
+  image_conditioning_stage2: false
+  model_channels: ${model_channels}
+  detach_conditioning: true
+  num_layers: ${num_layers}
+  channels_per_layer: ${layer_channels}
+  model_overrides:
+    num_blocks: 2
+    attn_resolutions:
+      - 16
+
+module:
+  _target_: bat3r.pointmaps.PointmapModule
+  render_on_module: true
+  soft_label: 0.01
+  model: ${model}
+
+optimizer:
+  _target_: torch.optim.Adam
+  lr: 0.0006
+  params: ???
+
+scheduler:
+  _target_: torch.optim.lr_scheduler.StepLR
+  step_size: 30000
+  gamma: 0.5
+  optimizer: ???
+
+dataset:
+  _target_: bat3r.alt_dataset.RasterizeDataset
+  root: ${dataset_root} # path to base directory of dataset
+  image_size: ${resolution}
+  num_layers: ${num_layers}
+  input_mode: "sd_dino"
+  render_at_load: false
+  scale_targets: false
+  apply_pose_flag: true
+  pose_ext: npy
+  return_vis: false
+
+canonical_dataset:
+  _target_: bat3r.alt_dataset.RasterizeDataset
+  root: ${canonnical_dataset_root} # path to base directory of dataset
+  image_size: ${resolution}
+  num_layers: ${num_layers}
+  input_mode: "sd_dino"
+  render_at_load: false
+  scale_targets: false
+  apply_pose_flag: false
+
+dataloader:
+  _target_: torch.utils.data.DataLoader
+  dataset: ???
+  batch_size: ${train_config.batch_size}
+  num_workers: 6
+  shuffle: true
+  collate_fn:
+    _target_: hydra.utils.get_method
+    path: ${dataset._target_}.collate_fn
+
+val_dataset:
+  _target_: bat3r.alt_dataset.RasterizeDataset
+  root: ${val_dataset_root} # path to base directory of dataset
+  image_size: ${resolution}
+  num_layers: ${num_layers}
+  input_mode: "sd_dino"
+  render_at_load: false
+  scale_targets: false
+
+
+val_loader:
+  _target_: torch.utils.data.DataLoader
+  dataset: ???
+  batch_size: ${train_config.batch_size}
+  num_workers: 2
+  shuffle: true
+  collate_fn:
+    _target_: hydra.utils.get_method
+    path: ${dataset._target_}.collate_fn

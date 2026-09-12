@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bat3r"
+version = "0.1.0"
+description = "BAT3R: Bootstrapping Articulated 3D Reconstruction from 2D Image Collections (ECCV 2026)"
+readme = "README.md"
+authors = [
+    { name = "Jakub Zadrożny" },
+    { name = "Oisin Mac Aodha" },
+    { name = "Hakan Bilen" },
+]
+license = { text = "BSD-3-Clause" }
+requires-python = ">=3.10"
+dependencies = [
+    "torch>=2.0",
+    "einops>=0.8.0",
+    "numpy>=1.24",
+    "trimesh>=4.0",
+    "hydra-core>=1.3",
+    "pygltflib>=1.15",
+    "scipy>=1.10",
+    "tqdm>=4.65",
+    "opencv-python",
+    "pillow",
+    "accelerate>=0.25",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+target-version = "py310"
+

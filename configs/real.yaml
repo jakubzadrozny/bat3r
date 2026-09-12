@@ -1,0 +1,78 @@
+model:
+  _target_: bat3r.models.SequentialUnet
+  resolution: ${resolution}
+  in_channels: 64
+  image_conditioning_stage2: false
+  model_channels: 128
+  detach_conditioning: true
+  num_layers: 4
+  channels_per_layer: 8
+  model_overrides:
+    num_blocks: 2
+    attn_resolutions:
+      - 16
+
+mesh_fitting:
+  algo: 'grad'
+  distance_threshold: 0.1 # -> horse
+  # distance_threshold: 0.05 # -> rest / all?
+  # grad
+  grad_num_steps: 300
+  angle_loss_weight: 1e-5
+  # repulsion_weight: 10.0 # -> elephant
+  # repulsion_weight: 5.0 # -> chimp
+  repulsion_weight: 1.0 # -> horse
+  repulsion_radius: 0.05
+  is_stranger_threshold: 0.5 # -> horse, elephant
+  # is_stranger_threshold: 0.3 # -> chimp
+  edge_length_loss_weight: 1000.0
+  local_volume_loss_weight: 20.0
+  lr: 2e-2
+  fixed_joints: [-4, -3, -2, -1] # -> horse
+  # fixed_joints: [15, 16, 17, 21, 22, 23, -4, -3, -2, -1] # -> chimp
+  # fixed_joints: [0, 1, 2, 3, 4, 5, 6, 8, 9, 24, 29, 30, 31, 32, 33, 34, 35, 36, 37, 40, 41, 42, 46, 57, 58, 59, 60, 74, 75, 83, 84, 85, 98, 99, 100, 112, 113, 114, 115]
+  subsample: 200
+  # subsample: 300 # -> elephant
+  optimize_bone_scales: true
+  scale_sym_loss_weight: 0.01
+  scale_reg_loss_weight: 0.01
+  # greedy
+  greedy_num_steps: 3
+  joint_threshold: 0.5
+
+module:
+  _target_: bat3r.pointmaps.PointmapModule
+  render_on_module: false
+  soft_label: 0.01
+  model: ${model}
+  device: ${device}
+
+log_dir: ???
+ckpt_name: weights_60000.pth # -> horse
+# ckpt_name: weights_80000.pth # -> rest
+dataset_root: ???
+
+shape_id: horse_male-rd
+# shape_id: elephant
+# shape_id: chimp
+
+split: ???
+
+confidence_threshold: 2.0
+device: cuda
+batch_size: 24
+resolution: 160
+
+dataset:
+  _target_: bat3r.alt_dataset.RealDataset
+  root: ${dataset_root} # path to base directory of dataset
+  image_size: ${resolution}
+  # image_ext: jpg
+  image_ext: png
+
+dataloader:
+  _target_: torch.utils.data.DataLoader
+  dataset: ???
+  batch_size: ${batch_size}
+  num_workers: 8
+  shuffle: false
