@@ -1,3 +1,5 @@
+# Based on DualPM (Copyright 2025 University of Oxford).
+# Modified by Jakub Zadrozny (2026). Licensed under BSD-3-Clause.
 
 from dataclasses import dataclass
 from dataclasses import fields as dataclass_fields

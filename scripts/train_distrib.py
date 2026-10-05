@@ -1,3 +1,7 @@
+# Author: Jakub Zadrozny
+# BAT3R (ECCV 2026) - https://github.com/jakubzadrozny/bat3r
+# Licensed under BSD-3-Clause.
+#
 # RUN:
 #   accelerate launch --gpu_ids=0,1,2,3 --num_processes=4 scripts/train_distrib.py
 #

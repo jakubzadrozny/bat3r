@@ -1,3 +1,6 @@
+# Author: Ben Kaye (Copyright 2025 University of Oxford).
+# Licensed under BSD-3-Clause.
+
 import hydra
 from omegaconf import DictConfig, OmegaConf
 from pathlib import Path

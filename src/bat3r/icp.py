@@ -1,3 +1,7 @@
+# Author: Jakub Zadrozny
+# BAT3R (ECCV 2026) - https://github.com/jakubzadrozny/bat3r
+# Licensed under BSD-3-Clause.
+
 import torch
 
 from bat3r import bones
