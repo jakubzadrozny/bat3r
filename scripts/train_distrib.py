@@ -29,7 +29,7 @@ from omegaconf import DictConfig, OmegaConf
 from tqdm import tqdm
 
 from bat3r.pointmaps import ConvUnet, PointmapModule, SequentialUnet
-from bat3r.third_party.prepare_dataloder import _prepare_data_loader
+from bat3r.third_party.prepare_dataloader import _prepare_data_loader
 
 WANDB_ENABLED = False
 WANDB_RUN_NAME = None
