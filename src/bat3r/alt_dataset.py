@@ -12,7 +12,7 @@ import trimesh
 # from psbody.mesh import Mesh
 # from psbody.mesh.visibility import visibility_compute
 
-import bat3r.raster.utils as ut
+import dualpm.utils as ut
 import bat3r.dataset as dd
 from bat3r.utils import (
     rescale_im_and_mask,

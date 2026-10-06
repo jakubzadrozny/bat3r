@@ -14,6 +14,8 @@ This is the official implementation of **_[BAT3R](https://jakubzadrozny.github.i
 
 ## 🛠️ Installation
 
+> **Note:** A CUDA-capable GPU is only required for training with online point map rasterization (`dualpm_lib` / `nvdiffrast`). Inference does not require CUDA.
+
 We recommend using [Anaconda](https://www.anaconda.com/) to set up a Python environment.
 
 Create and activate a virtual environment:

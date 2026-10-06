@@ -7,13 +7,11 @@ from dataclasses import fields as dataclass_fields
 from enum import Enum
 from functools import partial
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
-import nvdiffrast.torch as drt
 import torch
 import torch.utils.data as tud
-from bat3r.raster import render_dual_point_map
-from bat3r.raster.utils import perspective_matrix, cot_half_fov
+from dualpm.utils import perspective_matrix, cot_half_fov
 from einops import rearrange, einsum
 from torch import Tensor
 
@@ -72,7 +70,7 @@ class MeshToDualPointmap:
     image_size: tuple[int, int]
     num_layers: int
     sensor_height: float
-    context: drt.RasterizeGLContext | None
+    context: Any = None
     device: str = "cuda"
 
     def __init__(
@@ -92,11 +90,15 @@ class MeshToDualPointmap:
         self.return_on_cpu = return_on_cpu
         self.device = device
 
-        # try:
-        # except RuntimeError as e:
-        #     print(e)
-        #     print("Failed to create RasterizeGLContext, trying CUDA now...")
-        # self.context = drt.RasterizeGLContext(output_db=False, device=self.device)
+        try:
+            import nvdiffrast.torch as drt
+            from dualpm import render_dual_point_map
+        except ImportError as e:
+            raise ImportError(
+                "MeshToDualPointmap requires nvdiffrast and dualpm. "
+                "Please ensure CUDA, nvdiffrast, and dualpm_lib are installed."
+            ) from e
+
         self.context = drt.RasterizeCudaContext(device=self.device)
 
         self.raster_func = partial(

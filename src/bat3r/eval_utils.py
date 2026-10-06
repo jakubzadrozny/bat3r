@@ -13,7 +13,7 @@ from contextlib import contextmanager
 from scipy import stats
 from scipy.optimize import least_squares
 
-import bat3r.raster.utils as ut
+import dualpm.utils as ut
 from bat3r import bones
 from bat3r.pointmaps import PointmapModule
 

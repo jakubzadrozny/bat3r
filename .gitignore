@@ -16,6 +16,8 @@ data/
 *.ply
 *.obj
 
-# OS
+# OS & IDE
 .DS_Store
 *.swp
+.vscode/
+.idea/
