@@ -21,7 +21,10 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.optim.lr_scheduler import LRScheduler
 import torch.utils.data as data
-import wandb
+try:
+    import wandb
+except ImportError:
+    wandb = None
 from accelerate import Accelerator
 from accelerate.logging import get_logger
 from accelerate.utils import set_seed, DataLoaderConfiguration
@@ -434,15 +437,32 @@ def get_filtered_dataset(dataset, cfg, base_train_ids, dataset_name="dataset"):
     
     if df_path.exists():
         df = pd.read_csv(str(df_path), dtype={"file_id": "string"})
-        conditions = [
-            df['cd_canon'] < cfg.cd_canon_thresh,
-            df['cd_fitted_to_rec'] < cfg.cd_fitted_thresh,
-            df['confidence'] > cfg.conf_thresh,
-            df['fitting_total_loss'] < cfg.fitting_loss_thresh,
-            df['joints_dist'] < cfg.joints_dist_thresh,
-            df['cd_fitted_to_can'] < cfg.fitted_to_can_thresh,
-        ]
-        is_valid = np.logical_and.reduce(conditions)
+        
+        quantiles = {}
+        for col, col_q in cfg.filter.quantiles.items():
+            if col in df.columns:
+                quantiles[col] = df[col].quantile(col_q)
+        
+        conditions = []
+        if 'cd_canon' in quantiles:
+            conditions.append(df['cd_canon'] < quantiles['cd_canon'])
+        if 'cd_fitted_to_rec' in quantiles:
+            conditions.append(df['cd_fitted_to_rec'] < quantiles['cd_fitted_to_rec'])
+        if 'confidence' in quantiles:
+            conditions.append(df['confidence'] > quantiles['confidence'])
+        if 'fitting_total_loss' in quantiles:
+            conditions.append(df['fitting_total_loss'] < quantiles['fitting_total_loss'])
+        if 'joints_dist' in quantiles:
+            conditions.append(df['joints_dist'] < quantiles['joints_dist'])
+        if 'cd_fitted_to_can' in quantiles:
+            conditions.append(df['cd_fitted_to_can'] < quantiles['cd_fitted_to_can'])
+
+        if conditions:
+            df['failed_conditions_count'] = sum(~c for c in conditions)
+            is_valid = df['failed_conditions_count'] <= cfg.filter.max_failed_conditions
+        else:
+            is_valid = pd.Series([True] * len(df))
+
         valid_ids = set(df.loc[is_valid, "file_id"].tolist())
         train_ids = train_ids & valid_ids
         logger.info(f"All {dataset_name} samples: {len(df)}, of which valid: {len(valid_ids)}, of which train: {len(train_ids)}")
@@ -501,11 +521,14 @@ def main(cfg: DictConfig):
     module: PointmapModule = hydra.utils.instantiate(cfg.module, device=accelerator.device, model=model)
 
     train_ids_path = Path(cfg.dataset_root) / "train_ids.json"
-    test_ids_file = Path(cfg.val_dataset_root) / "test_ids.json"
     with train_ids_path.open() as f:
         train_ids = set(json.load(f))
-    with test_ids_file.open() as f:
-        test_ids = set(json.load(f))
+
+    test_ids_path = Path(cfg.val_dataset_root) / "test_ids.json"
+    test_ids = None
+    if test_ids_path.exists():
+        with test_ids_path.open() as f:
+            test_ids = set(json.load(f))
 
     train_ids_orig = train_ids.copy()
 
@@ -520,9 +543,13 @@ def main(cfg: DictConfig):
         secondary_dataset = get_filtered_dataset(secondary_dataset, cfg, train_ids_orig, dataset_name="secondary dataset")
         train_dataset = data.ConcatDataset([train_dataset, secondary_dataset])
 
+    # TODO: revisit val_dataset split handling and test_ids.json logic
     val_dataset = hydra.utils.instantiate(cfg.val_dataset)
-    test_ind = [idx for idx in range(len(val_dataset)) if val_dataset.ids[idx] in test_ids]
-    val_dataset = data.Subset(val_dataset, test_ind)
+    if test_ids is not None:
+        test_ind = [idx for idx in range(len(val_dataset)) if val_dataset.ids[idx] in test_ids]
+        val_dataset = data.Subset(val_dataset, test_ind)
+    else:
+        val_dataset = get_filtered_dataset(val_dataset, cfg, train_ids_orig, dataset_name="val dataset")
 
     train_loader = hydra.utils.instantiate(cfg.dataloader, dataset=train_dataset, pin_memory=True)
     # CONSIDER:

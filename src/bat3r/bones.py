@@ -64,21 +64,17 @@ class ShapeProcessingData:
         canonical_joints_sym[..., 0] *= -1
         dist_joints = torch.cdist(canonical_joints_sym, self.canonical_joints)
 
-        # CHIMP ONLY:
-        # Tie-breakers for overlapping joints:
+        # Universal symmetry correspondence:
         # 1. Prefer joints with the same topological depth
-        # depth_penalty = torch.abs(self.joint_depths.unsqueeze(1) - self.joint_depths.unsqueeze(0)) * 1e-4
+        depth_penalty = torch.abs(self.joint_depths.unsqueeze(1) - self.joint_depths.unsqueeze(0)) * 1e-4
         # 2. Prefer self-matching for central joints
-        # self_penalty = (1.0 - torch.eye(len(self.joints), device=device)) * 1e-5
-        
-        # dist_joints_penalized = dist_joints + depth_penalty + self_penalty
-        # _, joint_sym_corresp = torch.min(dist_joints_penalized, dim=1)
+        self_penalty = (1.0 - torch.eye(len(self.joints), device=device)) * 1e-5
+        dist_joints_penalized = dist_joints + depth_penalty + self_penalty
 
-        # REST:
         joint_sym_corresp = torch.zeros(len(self.joints), dtype=torch.long, device=device)
         for i in range(len(self.joints)):
             min_dist = dist_joints[i].min().item()
-            candidates = torch.where(dist_joints[i] <= min_dist + 1e-4)[0].tolist()
+            candidates = torch.where(dist_joints[i] <= min_dist + 1e-3)[0].tolist()
 
             best_j = candidates[0]
             best_prefix_len = -1
@@ -98,7 +94,7 @@ class ShapeProcessingData:
                         best_prefix_len = prefix_len
                         best_j = j
                     elif prefix_len == best_prefix_len:
-                        if dist_joints[i, j] < dist_joints[i, best_j]:
+                        if dist_joints_penalized[i, j] < dist_joints_penalized[i, best_j]:
                             best_j = j
                         
             joint_sym_corresp[i] = best_j

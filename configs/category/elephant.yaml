@@ -1,0 +1,38 @@
+# @package _global_
+
+defaults:
+  - default
+  - _self_
+
+category_name: elephant
+shape_id: elephant
+far: 60.0
+
+mesh_fitting:
+  repulsion_weight: 10.0
+  fixed_joints: [0, 1, 2, 3, 4, 5, 6, 8, 9, 24, 29, 30, 31, 32, 33, 34, 35, 36, 37, 40, 41, 42, 46, 57, 58, 59, 60, 74, 75, 83, 84, 85, 98, 99, 100, 112, 113, 114, 115]
+
+body_centric_frame:
+  frame_type: quadruped
+  forward_joints: ["bip_spine_2_73", "bip_spine_1_76"]
+  right_joints: ["def_chestBreath_joint.R_75", "def_chestBreath_joint.L_74"]
+  center_joint: "bip_spine_2_73"
+
+view_sampling:
+  distribution: student_t
+  margin: [0.05, 0.2]
+  params_roll:
+    front: {df: 1.275, mu: 0.0, std: 4.848}
+    left: {df: 1.625, mu: 0.0, std: 5.142}
+    right: {df: 1.672, mu: 0.0, std: 5.128}
+    rear: {df: 1.297, mu: 0.0, std: 4.802}
+  params_el:
+    front: {df: 1.747, mu: 0.0, std: 5.488}
+    left: {df: 2.308, mu: 0.0, std: 6.926}
+    right: {df: 2.195, mu: 0.0, std: 6.794}
+    rear: {df: 1.536, mu: 0.0, std: 4.859}
+
+gen_train_set:
+  include_estimated_camera: true
+  num_views: 2
+

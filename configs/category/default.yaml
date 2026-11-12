@@ -1,0 +1,56 @@
+# @package _global_
+
+ckpt_name: weights_80000.pth
+batch_size: 24
+near: 0.1
+far: 30.0
+
+mesh_fitting:
+  algo: 'grad'
+  distance_threshold: 0.05
+  grad_num_steps: 300
+  angle_loss_weight: 3e-5
+  repulsion_weight: 1.0
+  repulsion_radius: 0.05
+  is_stranger_threshold: 0.5
+  edge_length_loss_weight: 3000.0
+  local_volume_loss_weight: 20.0
+  lr: 2e-2
+  fixed_joints: [-4, -3, -2, -1]
+  subsample: 200
+  optimize_bone_scales: true
+  scale_sym_loss_weight: 0.01
+  scale_reg_loss_weight: 0.02
+  greedy_num_steps: 3
+  joint_threshold: 0.5
+
+body_centric_frame:
+  frame_type: quadruped
+  forward_joints: null
+  right_joints: null
+  up_joints: null
+  center_joint: null
+
+view_sampling:
+  distribution: student_t
+  margin: [0.05, 0.2]
+  params_az:
+    a: 1.5
+    b: 1.5
+  params_roll: null
+  params_el: null
+
+gen_train_set:
+  include_estimated_camera: true
+  num_views: 3
+  num_views_by_type: null
+
+filter:
+  max_failed_conditions: 1
+  quantiles:
+    cd_canon: 0.75
+    cd_fitted_to_rec: 0.75
+    confidence: 0.25
+    fitting_total_loss: 0.8
+    joints_dist: 0.9
+    cd_fitted_to_can: 0.9

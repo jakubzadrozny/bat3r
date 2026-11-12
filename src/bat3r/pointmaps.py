@@ -308,6 +308,8 @@ class PointmapModule:
         confidence_alpha: float = 1.0,
         device: str = "cuda",
         soft_label: float | None = None,
+        near: float = 0.1,
+        far: float = 30.0,
     ) -> None:
         self.model = model
         self.optimizer = optimizer
@@ -329,7 +331,12 @@ class PointmapModule:
         if render_on_module:
             res = self.model.resolution
             self.renderer = MeshToDualPointmap(
-                im_size=(res, res), num_layers=self.num_layers, device=self.device, return_on_cpu=False
+                im_size=(res, res),
+                num_layers=self.num_layers,
+                device=self.device,
+                return_on_cpu=False,
+                near=near,
+                far=far,
             )
             # except Exception as e:
             #     logger.warning(f"Failed to initialize renderer: {e}")

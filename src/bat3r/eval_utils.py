@@ -10,6 +10,7 @@ import hydra
 import numpy as np
 import torch
 from contextlib import contextmanager
+from omegaconf import DictConfig
 from scipy import stats
 from scipy.optimize import least_squares
 
@@ -677,7 +678,7 @@ def estimate_camera_pose_new_with_focal(
     world2cam_new = world2rel_no_scale.clone()
     T_offset = torch.tensor([Tx, Ty, Tz], device=world2cam_new.device, dtype=torch.float32)
     world2cam_new[:3, 3] += T_offset
-    return world2cam_new, focal_length, cam_inlier_mask
+    return world2cam_new, float(focal_length), cam_inlier_mask
 
 
 def get_transform_error(T_pred: torch.Tensor, T_gt: torch.Tensor) -> tuple[float, float]:
@@ -754,80 +755,87 @@ def get_rotation_angle_rad(T: torch.Tensor) -> tuple[float, float]:
     return get_rotation_mag(R, in_deg=False)
 
 
-def get_body_centric_coord_sys(joint_pos_dict: dict[str, torch.Tensor]):
-    # Forward (Z): Hips -> Neck
-    z_axis = joint_pos_dict["Spine_02"] - joint_pos_dict["Spine_03"]
-    z_axis /= torch.linalg.norm(z_axis)
-    
-    # Right Temp: Left Hip -> Right Hip
-    right_temp = joint_pos_dict["hip_b.R"] - joint_pos_dict["hip_b.L"]
-    right_temp /= torch.linalg.norm(right_temp)
-    
-    # Up (Y): Perpendicular to Spine and Thighs (Dorsal direction)
-    y_axis = torch.linalg.cross(right_temp, z_axis)
-    y_axis /= torch.linalg.norm(y_axis)
-    
-    # Right Corrected (X): Ensure orthogonality
-    # x_axis = np.cross(y_axis, z_axis)
-    x_axis = torch.linalg.cross(z_axis, y_axis)
-    x_axis /= torch.linalg.norm(x_axis)
-    
-    # Horse Rotation Matrix (Columns = Basis Vectors)
-    R_horse = torch.column_stack((x_axis, y_axis, z_axis))
-    return R_horse
+def get_body_centric_coord_sys(joint_pos_dict: dict[str, torch.Tensor], frame_cfg: DictConfig):
+    if frame_cfg.frame_type == "biped":
+        right_pair = frame_cfg.right_joints
+        up_pair = frame_cfg.up_joints
+
+        # Right (X): Left Hip -> Right Hip
+        x_axis = joint_pos_dict[right_pair[0]] - joint_pos_dict[right_pair[1]]
+        x_axis /= torch.linalg.norm(x_axis)
+
+        # Up Temp (Y): Lower Spine -> Upper Spine
+        y_temp = joint_pos_dict[up_pair[0]] - joint_pos_dict[up_pair[1]]
+        y_temp /= torch.linalg.norm(y_temp)
+
+        # Forward (Z): Derived from Up and Right
+        z_axis = torch.linalg.cross(y_temp, x_axis)
+        z_axis /= torch.linalg.norm(z_axis)
+
+        # Up Corrected (Y): Ensure perfect orthogonality
+        y_axis = torch.linalg.cross(x_axis, z_axis)
+        y_axis /= torch.linalg.norm(y_axis)
+
+        R_body = torch.column_stack((x_axis, y_axis, z_axis))
+        return R_body
+    elif frame_cfg.frame_type == "quadruped":
+        fwd_pair = frame_cfg.forward_joints
+        right_pair = frame_cfg.right_joints
+
+        # Forward (Z): Hips -> Neck
+        z_axis = joint_pos_dict[fwd_pair[0]] - joint_pos_dict[fwd_pair[1]]
+        z_axis /= torch.linalg.norm(z_axis)
+        
+        # Right Temp: Left Hip -> Right Hip
+        right_temp = joint_pos_dict[right_pair[0]] - joint_pos_dict[right_pair[1]]
+        right_temp /= torch.linalg.norm(right_temp)
+        
+        # Up (Y): Perpendicular to Spine and Thighs (Dorsal direction)
+        y_axis = torch.linalg.cross(right_temp, z_axis)
+        y_axis /= torch.linalg.norm(y_axis)
+        
+        # Right Corrected (X): Ensure orthogonality
+        x_axis = torch.linalg.cross(z_axis, y_axis)
+        x_axis /= torch.linalg.norm(x_axis)
+        
+        R_body = torch.column_stack((x_axis, y_axis, z_axis))
+        return R_body
+    else:
+        raise ValueError(f"Unknown frame_type: {frame_cfg.frame_type}")
 
 
-def get_body_centric_camera_pose(cam2world: torch.Tensor, joint_pos_dict: dict[str, torch.Tensor]):
+def get_body_centric_camera_pose(cam2world: torch.Tensor, joint_pos_dict: dict[str, torch.Tensor], frame_cfg: DictConfig):
     cam_pos_world = cam2world[:3, 3]
-    rel_pos_world = cam_pos_world - joint_pos_dict["Spine_03"]
+    rel_pos_world = cam_pos_world - joint_pos_dict[frame_cfg.center_joint]
 
-    R_horse = get_body_centric_coord_sys(joint_pos_dict)
-    y_axis = R_horse[:, 1]
+    R_body = get_body_centric_coord_sys(joint_pos_dict, frame_cfg=frame_cfg)
+    y_axis = R_body[:, 1]
     
-    # Project into Horse Frame
-    # V_local = R_horse.T * V_world
-    pos_local = rel_pos_world @ R_horse 
+    # Project into Body Frame
+    pos_local = rel_pos_world @ R_body 
     
     radius = torch.linalg.norm(pos_local)
     
     # Elevation: Angle from the X-Z plane (Spinal plane)
-    # arcsin(y / r)
     elevation = torch.rad2deg(torch.arcsin(pos_local[1] / radius))
     
     # Azimuth: Angle in the X-Z plane
-    # arctan2(x, z). 0 is Forward (Z), +/- 180 is Behind
     azimuth = torch.rad2deg(torch.arctan2(pos_local[0], pos_local[2]))
     
-    # 4. Calculate Camera Roll
-    # We need the Camera's Local vectors in World Space
-    # Assuming standard GLTF/OpenGL camera: 
-    # -Z is Forward (Look), +Y is Up, +X is Right
-    # cam_right_world = cam2world[:3, 0]
+    # Calculate Camera Roll
     cam_up_world    = cam2world[:3, 1]
     cam_fwd_world   = -cam2world[:3, 2] # Look vector
     
-    # Project Horse's Up vector (y_axis) onto Camera's Image Plane
-    # The image plane is perpendicular to cam_fwd_world
+    body_up_projected = y_axis - torch.dot(y_axis, cam_fwd_world) * cam_fwd_world
     
-    # Projection formula: V_proj = V - (V . N) * N
-    horse_up_projected = y_axis - torch.dot(y_axis, cam_fwd_world) * cam_fwd_world
-    
-    # Normalize (handle edge case where cam looks straight down horse's Y)
-    norm = torch.linalg.norm(horse_up_projected)
+    norm = torch.linalg.norm(body_up_projected)
     if norm < 1e-6:
-        # Singularity: Camera looking straight down the Horse's Up vector
-        # Roll is undefined or can be set to 0
         roll = 0.0
     else:
-        horse_up_projected /= norm
-        
-        # Calculate angle between Camera Up and Projected Horse Up
-        # Dot product gives cos(angle)
-        dot = torch.dot(horse_up_projected, cam_up_world)
-        # Cross product (along look axis) gives sign
-        cross = torch.linalg.cross(horse_up_projected, cam_up_world)
+        body_up_projected /= norm
+        dot = torch.dot(body_up_projected, cam_up_world)
+        cross = torch.linalg.cross(body_up_projected, cam_up_world)
         det = torch.dot(cross, cam_fwd_world)
-        
         roll = torch.rad2deg(torch.arctan2(det, dot))
 
     return {
@@ -845,6 +853,7 @@ def get_camera_matrix_from_spherical(
     joint_pos_dict: dict[str, torch.Tensor],
     target_points: torch.Tensor,
     focal_length: float,
+    frame_cfg: DictConfig,
     sensor_height: float = 36.0,
     margin: float = 0.1,
 ):
@@ -854,10 +863,10 @@ def get_camera_matrix_from_spherical(
     """
     device = target_points.device
 
-    R_horse = get_body_centric_coord_sys(joint_pos_dict)
-    y_axis = R_horse[:, 1]
+    R_body = get_body_centric_coord_sys(joint_pos_dict, frame_cfg=frame_cfg)
+    y_axis = R_body[:, 1]
     
-    # Calculate Direction in Horse Frame
+    # Calculate Direction in Body Frame
     az_rad = np.radians(azimuth)
     el_rad = np.radians(elevation)
     
@@ -867,15 +876,15 @@ def get_camera_matrix_from_spherical(
     local_z = xz_len * np.cos(az_rad)
     
     dir_local = torch.tensor([local_x, local_y, local_z], device=device, dtype=torch.float32)
-    dir_world = R_horse @ dir_local
+    dir_world = R_body @ dir_local
     dir_world /= torch.linalg.norm(dir_world)
     
     # Camera Forward (Look) is opposite to the direction vector
     cam_fwd = -dir_world 
     
     # Handle Roll
-    horse_up = y_axis
-    base_up = horse_up - torch.dot(horse_up, cam_fwd) * cam_fwd
+    body_up = y_axis
+    base_up = body_up - torch.dot(body_up, cam_fwd) * cam_fwd
     if torch.linalg.norm(base_up) < 1e-6:
         y_vec = torch.tensor([0, 1, 0], device=device, dtype=torch.float32)
         base_up = y_vec - torch.dot(y_vec, cam_fwd) * cam_fwd
@@ -890,11 +899,8 @@ def get_camera_matrix_from_spherical(
     cam_back = -cam_fwd
     R_cam = torch.column_stack((cam_right, cam_up, cam_back))
     
-    # --- 2. Center and Frame the Points (New Logic) ---
-    
-    # Transform points into "Camera Rotation Space" relative to the Spine
-    # This aligns the points so X is "Screen Right", Y is "Screen Up", Z is "Depth"
-    center_ref = joint_pos_dict["Spine_03"]
+    # --- 2. Center and Frame the Points ---
+    center_ref = joint_pos_dict[frame_cfg.center_joint]
     rel_vecs = target_points - center_ref
     
     # Rotate vectors: v_local = v_world . R_cam
@@ -989,9 +995,6 @@ def get_camera_matrix_from_spherical(
     return world2cam, cam2world
 
 
-params_roll = {'front': {'df': 1.275, 'mu': -0.177, 'std': 4.848}, 'left': {'df': 1.625, 'mu': -6.331, 'std': 5.142}, 'right': {'df': 1.672, 'mu': 6.318, 'std': 5.128}, 'rear': {'df': 1.297, 'mu': 0.089, 'std': 4.802}}
-params_el = {'front': {'df': 1.747, 'mu': 8.246, 'std': 5.488}, 'left': {'df': 2.308, 'mu': 0.946, 'std': 6.926}, 'right': {'df': 2.195, 'mu': 1.388, 'std': 6.794}, 'rear': {'df': 1.536, 'mu': -5.692, 'std': 4.859}}
-
 def get_view_type(az):
     if (az < -150) or (az >= 150):
         return "rear"
@@ -1008,41 +1011,48 @@ def get_other_views(azimuth):
     view_type = get_view_type(azimuth)
     return [x for x in view_types if x != view_type]
 
-def sample_view(view_type: str | None = None):
-    if view_type is None:
-        az = np.random.uniform(-180, 180)
+def sample_view(view_cfg: DictConfig, view_type: str | None = None):
+    if view_cfg.distribution == "beta":
+        az = stats.beta.rvs(view_cfg.params_az.a, view_cfg.params_az.b, loc=-180, scale=360)
         view_type = get_view_type(az)
-    elif view_type == "front":
-        az = np.random.uniform(-30, 30)
-    elif view_type == "rear":
-        if np.random.uniform() < 0.5:
-            az = np.random.uniform(-180, -150)
+
+        roll_params = view_cfg.params_roll[view_type]
+        el_params = view_cfg.params_el[view_type]
+        roll = stats.beta.rvs(roll_params.a, roll_params.b, loc=-180, scale=360)
+        el = stats.beta.rvs(el_params.a, el_params.b, loc=-90, scale=180)
+    elif view_cfg.distribution == "student_t":
+        if view_type is None:
+            az = np.random.uniform(-180, 180)
+            view_type = get_view_type(az)
+        elif view_type == "front":
+            az = np.random.uniform(-30, 30)
+        elif view_type == "rear":
+            if np.random.uniform() < 0.5:
+                az = np.random.uniform(-180, -150)
+            else:
+                az = np.random.uniform(150, 180)
+        elif view_type == "right":
+            az = np.random.uniform(-150, -30)
+        elif view_type == "left":
+            az = np.random.uniform(30, 150)
         else:
-            az = np.random.uniform(150, 180)
-    elif view_type == "right":
-        az = np.random.uniform(-150, -30)
-    elif view_type == "left":
-        az = np.random.uniform(30, 150)
+            raise ValueError(f"Unknown view_type: {view_type}")
+
+        roll_params = view_cfg.params_roll[view_type]
+        roll = stats.t.rvs(roll_params.df, roll_params.mu, roll_params.std)
+
+        el_params = view_cfg.params_el[view_type]
+        el = stats.t.rvs(el_params.df, el_params.mu, el_params.std)
     else:
-        print(f"UNKNOWN VIEW TYPE {view_type}")
+        raise ValueError(f"Unknown distribution: {view_cfg.distribution}")
 
-    df_roll = params_roll[view_type]['df']
-    mu_roll = params_roll[view_type]['mu']
-    std_roll = params_roll[view_type]['std']
-    roll = stats.t.rvs(df_roll, mu_roll, std_roll)
-
-    df_el = params_el[view_type]['df']
-    mu_el = params_el[view_type]['mu']
-    std_el = params_el[view_type]['std']
-    el = stats.t.rvs(df_el, mu_el, std_el)
-
-    margin = np.random.uniform(0.1, 0.25)
+    margin = np.random.uniform(view_cfg.margin[0], view_cfg.margin[1])
 
     return {
-        'azimuth': az,
-        'elevation': el,
-        'roll': roll,
-        'margin': margin,
+        'azimuth': float(az),
+        'elevation': float(el),
+        'roll': float(roll),
+        'margin': float(margin),
     }
 
 VIEWS = ['front', 'rear', 'right', 'left']
@@ -1117,247 +1127,3 @@ def mps_timer(label):
     yield
     torch.mps.synchronize()
     print(f"{label}: {(time.perf_counter() - t0)*1000:.2f} ms")
-
-
-# def estimate_depth_offset(
-#     pts_rel: np.ndarray,      # P_world (N, 3)
-#     matching_pixels: np.ndarray,# Pixel coordinates (N, 2)
-#     resolution: int,
-#     focal_length: float,
-#     subsample: bool = True,
-#     num_corresp: int = 2000,    # RANSAC needs a healthy pool of points
-#     sensor_height: float = 36.0,
-#     ransac_threshold: float = 5.0, # in pixels
-#     ransac_iters: int = 100,
-#     refine: bool = False,
-# ):
-#     """
-#     Recovers the full world-to-camera transform given the 'relative' transform
-#     (which lacks absolute depth) and 2D-3D correspondences.
-#     """
-#     _pts_rel = pts_rel
-#     _matching_pixels = matching_pixels
-#     if subsample and pts_rel.shape[0] > num_corresp:
-#         # Randomly sample if we have too many points to keep RANSAC fast
-#         pi = np.random.permutation(pts_rel.shape[0])[:num_corresp]
-#         pts_rel = pts_rel[pi]
-#         matching_pixels = matching_pixels[pi]
-
-#     X_rel = pts_rel[:, 0]
-#     Y_rel = pts_rel[:, 1]
-#     Z_rel = pts_rel[:, 2]
-
-#     focal_length_scaled = resolution * focal_length / sensor_height
-#     cx = (resolution-1) / 2
-#     cy = (resolution-1) / 2
-    
-#     u_obs = matching_pixels[:, 0]
-#     v_obs = matching_pixels[:, 1]
-
-#     # Pre-compute denominators to identify stable axes
-#     denom_u = u_obs - cx
-#     denom_v = v_obs - cy
-    
-#     # Compute candidate Tz values from both U and V
-#     # We use a small epsilon to avoid division by zero
-#     cand_Tz_u = -(focal_length_scaled * X_rel) / (denom_u + 1e-6) - Z_rel
-#     cand_Tz_v = (focal_length_scaled * Y_rel) / (denom_v + 1e-6) - Z_rel
-
-#     # For each point, pick the candidate from the dimension (u or v) 
-#     # that is further from the optical center (more stable)
-#     use_v = torch.abs(denom_v) > torch.abs(denom_u)
-#     candidates = torch.where(use_v, cand_Tz_v, cand_Tz_u)
-
-#     best_inlier_count = -1
-#     best_Tz = 0.0
-
-#     # Filter invalid candidates (e.g. those that put points behind camera)
-#     # This assumes standard pinhole (+Z depth). If OpenGL (-Z depth), 
-#     # we might need to check -(Z_rel + Tz) > 0. 
-#     # We rely on reprojection error to select the correct one.
-#     valid_mask = (Z_rel + candidates) < -0.1
-#     candidate_pool = candidates[valid_mask]
-    
-#     # If no valid candidates, return input matrix
-#     if len(candidate_pool) == 0:
-#         raise NoCandidatesError("No valid Tz candidates found.")
-
-#     for _ in range(ransac_iters):
-#         # Sample one hypothesis
-#         idx = torch.randint(0, len(candidate_pool), (1,), device=candidate_pool.device)
-#         curr_Tz = candidate_pool[idx]
-
-#         # Project all points
-#         Z_est = Z_rel + curr_Tz
-#         # Guard against zero depth div
-#         depth = torch.clamp(-Z_est, min=1e-5)
-        
-#         u_proj = (focal_length_scaled * X_rel) / depth + cx
-#         v_proj = cy - (focal_length_scaled * Y_rel) / depth
-
-#         # Calculate error
-#         error_sq = (u_obs - u_proj)**2 + (v_obs - v_proj)**2
-#         inliers = error_sq < (ransac_threshold**2)
-#         count = torch.sum(inliers)
-
-#         if count > best_inlier_count:
-#             best_inlier_count = count
-#             best_Tz = curr_Tz
-
-#     # recompute inliers on all points
-#     X = _pts_rel[:, 0]
-#     Y = _pts_rel[:, 1]
-#     Z = _pts_rel[:, 2]
-#     _u_obs = _matching_pixels[:, 0]
-#     _v_obs = _matching_pixels[:, 1]
-#     best_Z = Z + best_Tz
-#     best_depth = torch.clamp(-best_Z, min=1e-5)
-#     best_u_proj = (focal_length_scaled * X) / best_depth + cx
-#     best_v_proj = cy - (focal_length_scaled * Y) / best_depth
-#     best_error_sq = (_u_obs - best_u_proj)**2 + (_v_obs - best_v_proj)**2
-#     best_inliers = best_error_sq < (ransac_threshold**2)
-
-#     if not refine:
-#         return best_Tz.item(), best_inliers
-    
-#     _pts_rel = _pts_rel[best_inliers].cpu().numpy()
-#     _matching_pixels = _matching_pixels[best_inliers].cpu().numpy()
-#     X = _pts_rel[:, 0]
-#     Y = _pts_rel[:, 1]
-#     Z = _pts_rel[:, 2]
-#     u_obs = _matching_pixels[:, 0]
-#     v_obs = _matching_pixels[:, 1]
-
-#     def residual(tz_offset):
-#         # Total Z (OpenGL: look down -Z)
-#         Z_total = Z + tz_offset
-#         depth = -Z_total
-#         depth = np.maximum(depth, 1e-5)
-        
-#         # OpenGL Projection
-#         u_proj = (focal_length_scaled * X) / depth + cx
-#         v_proj = cy - (focal_length_scaled * Y) / depth
-
-#         return np.concatenate([u_proj - u_obs, v_proj - v_obs])
-    
-#     Tz_init = best_Tz.item()
-#     near_plane = 0.01
-#     tz_upper_bound = -np.max(Z) - near_plane
-#     if Tz_init > tz_upper_bound:
-#         Tz_init = tz_upper_bound - 0.01
-
-#     res = least_squares(
-#         residual,
-#         x0=[Tz_init],
-#         bounds=([-np.inf], [tz_upper_bound]),
-#         ftol=1e-4
-#     )
-#     final_Tz_offset = res.x[0]
-#     return final_Tz_offset, best_inliers
-
-# def estimate_pose_and_focal_search(
-#     pts_rel: torch.Tensor,
-#     matching_pixels: torch.Tensor,
-#     resolution: int,
-#     sensor_height: float = 36.0,
-#     focal_range: tuple[float, float] = (30.0, 300.0),
-#     focal_steps: int = 20,
-#     ransac_threshold: float = 5.0,
-#     ransac_iters: int = 50,
-#     refine: bool = False,
-# ):
-#     """
-#     Grid search wrapper that reuses estimate_camera_pose_from_rel to find 
-#     both T_z and Focal Length. Includes a final refinement step.
-#     """
-#     f_candidates = torch.linspace(focal_range[0], focal_range[1], focal_steps)
-    
-#     best_score = -1
-#     best_depth_offset = None
-#     best_f_mm = 0.0
-#     best_inliers = None
-
-#     # --- 1. Grid Search Loop ---
-#     for f_mm in f_candidates:
-#         f_val = f_mm.item()
-#         try:
-#             # Reuse the existing single-focal solver
-#             depth_offset, inliers = estimate_depth_offset(
-#                 pts_rel=pts_rel,
-#                 matching_pixels=matching_pixels,
-#                 resolution=resolution,
-#                 focal_length=f_val,
-#                 sensor_height=sensor_height,
-#                 ransac_threshold=ransac_threshold,
-#                 ransac_iters=ransac_iters,
-#             )
-            
-#             count = inliers.sum().item()
-#             if count > best_score:
-#                 best_score = count
-#                 best_depth_offset = depth_offset
-#                 best_f_mm = f_val
-#                 best_inliers = inliers
-                
-#         except NoCandidatesError:
-#             continue # Skip if no valid candidates found for this f
-
-#     # If grid search failed completely, return input
-#     if best_depth_offset is None:
-#         return 0, (focal_range[0] + focal_range[1]) / 2
-    
-#     if not refine:
-#         return best_depth_offset, best_f_mm, best_inliers
-    
-#     # --- Refinement (Joint Optimization) ---
-#     # We move to CPU/NumPy for scipy.optimize
-#     pts_rel = pts_rel[best_inliers].detach().cpu().numpy()
-#     obs = matching_pixels[best_inliers].detach().cpu().numpy()
-
-#     X, Y, Z = pts_rel[:, 0], pts_rel[:, 1], pts_rel[:, 2]
-#     u_obs, v_obs = obs[:, 0], obs[:, 1]
-
-#     cx = (resolution - 1) / 2
-#     cy = (resolution - 1) / 2
-
-#     # Extract the Tz we found from the pose matrix
-#     # best_pose[2, 3] = original_Tz + new_offset
-#     # We want to optimize the *total* Tz directly
-#     Tz_init = best_depth_offset
-
-#     # In OpenGL, Z must be negative.
-#     # So (Z_rel + Tz) < -near_plane  =>  Tz < -near_plane - Z_rel
-#     # This must hold for ALL points, so we look at the 'worst case' (max Z_rel)
-    
-#     # Upper bound: The object cannot cross the near plane
-#     near_plane = 0.01
-#     tz_upper_bound = -np.max(Z) - near_plane
-#     if Tz_init > tz_upper_bound:
-#         Tz_init = tz_upper_bound - 0.01
-
-#     def residual(params):
-#         tz_offset, f_mm = params
-#         f_pix = f_mm * resolution / sensor_height
-        
-#         # Total Z (OpenGL: look down -Z)
-#         Z_total = Z + tz_offset
-#         depth = -Z_total
-        
-#         # Clamp depth to avoid singularities
-#         depth = np.maximum(depth, 1e-5)
-        
-#         # OpenGL Projection
-#         u_est = (f_pix * X) / depth + cx
-#         v_est = cy - (f_pix * Y) / depth
-        
-#         return np.concatenate([u_est - u_obs, v_est - v_obs])
-
-#     # Optimize both Tz and Focal Length
-#     res = least_squares(
-#         residual,
-#         x0=[Tz_init, best_f_mm],
-#         bounds=([-np.inf, focal_range[0]], [tz_upper_bound, focal_range[1]]),
-#         ftol=1e-4
-#     )
-#     final_Tz_offset, final_f_mm = res.x
-#     return final_Tz_offset, final_f_mm, best_inliers

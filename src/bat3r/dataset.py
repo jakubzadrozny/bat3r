@@ -81,6 +81,8 @@ class MeshToDualPointmap:
         subtract_depth: bool = True,
         sensor_height: float = 36.0,
         scale_targets: bool = False,
+        near: float = 0.1,
+        far: float = 30.0,
         device: str = "cuda",
     ):
         self.image_size = tuple(im_size)
@@ -88,6 +90,8 @@ class MeshToDualPointmap:
         self.sensor_height = sensor_height
         self.subtract_depth = subtract_depth
         self.return_on_cpu = return_on_cpu
+        self.near = near
+        self.far = far
         self.device = device
 
         try:
@@ -131,7 +135,7 @@ class MeshToDualPointmap:
         faces = [f.type(torch.int32) for f in faces]
 
         _cot_half_fov = cot_half_fov(focal_length, self.sensor_height)
-        projection = perspective_matrix(_cot_half_fov)
+        projection = perspective_matrix(_cot_half_fov, near=self.near, far=self.far)
 
         with torch.no_grad():
             dual_pointmap = self.raster_func(

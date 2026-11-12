@@ -1,0 +1,51 @@
+# @package _global_
+
+defaults:
+  - default
+  - _self_
+
+category_name: horse
+shape_id: horse_male-rd
+
+# Body-centric coordinate frame joints:
+# - forward_joints: [rear spine, front spine] (forward vector towards head/neck)
+# - right_joints: [left hip, right hip] (lateral axis)
+# - center_joint: reference spine joint for camera framing
+body_centric_frame:
+  frame_type: quadruped
+  forward_joints: ["Spine_02", "Spine_03"]
+  right_joints: ["hip_b.R", "hip_b.L"]
+  center_joint: "Spine_03"
+
+view_sampling:
+  distribution: student_t
+  margin: [0.1, 0.25]
+  params_roll:
+    front: {df: 1.275, mu: -0.177, std: 4.848}
+    left: {df: 1.625, mu: -6.331, std: 5.142}
+    right: {df: 1.672, mu: 6.318, std: 5.128}
+    rear: {df: 1.297, mu: 0.089, std: 4.802}
+  params_el:
+    front: {df: 1.747, mu: 8.246, std: 5.488}
+    left: {df: 2.308, mu: 0.946, std: 6.926}
+    right: {df: 2.195, mu: 1.388, std: 6.794}
+    rear: {df: 1.536, mu: -5.692, std: 4.859}
+
+gen_train_set:
+  include_estimated_camera: false
+  num_views: 4
+  num_views_by_type:
+    front: 4
+    rear: 3
+    other: 5
+
+filter:
+  max_failed_conditions: 0
+  quantiles:
+    cd_canon: 0.95
+    cd_fitted_to_rec: 0.95
+    confidence: 0.05
+    fitting_total_loss: 0.98
+    joints_dist: 0.98
+    cd_fitted_to_can: 0.98
+

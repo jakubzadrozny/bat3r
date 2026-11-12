@@ -1,0 +1,47 @@
+# @package _global_
+
+defaults:
+  - default
+  - _self_
+
+category_name: chimp
+shape_id: chimp
+batch_size: 48
+
+mesh_fitting:
+  repulsion_weight: 5.0
+  is_stranger_threshold: 0.3
+  scale_reg_loss_weight: 0.01
+  fixed_joints: [15, 16, 17, 21, 22, 23, -4, -3, -2, -1]
+
+# Body-centric coordinate frame joints:
+# - right_joints: [left hip, right hip] (lateral axis)
+# - up_joints: [pelvis, COG] (vertical torso axis)
+# - center_joint: COG joint for camera framing
+body_centric_frame:
+  frame_type: biped
+  right_joints: ["R_hip_J_018", "L_hip_J_024"]
+  up_joints: ["COG_J_01", "pelvis_J_017"]
+  center_joint: "COG_J_01"
+
+view_sampling:
+  distribution: beta
+  margin: [0.05, 0.2]
+  params_az:
+    a: 1.5
+    b: 1.5
+  params_roll:
+    front: {a: 11.762, b: 11.281}
+    left: {a: 10.165, b: 12.09}
+    right: {a: 9.889, b: 8.345}
+    rear: {a: 9.664, b: 10.121}
+  params_el:
+    front: {a: 7.132, b: 3.061}
+    left: {a: 6.859, b: 3.483}
+    right: {a: 5.046, b: 2.967}
+    rear: {a: 3.708, b: 3.181}
+
+gen_train_set:
+  include_estimated_camera: true
+  num_views: 3
+
