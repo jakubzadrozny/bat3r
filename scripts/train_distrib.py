@@ -520,36 +520,40 @@ def main(cfg: DictConfig):
     model, optimizer, scheduler = get_module(cfg, training=True)
     module: PointmapModule = hydra.utils.instantiate(cfg.module, device=accelerator.device, model=model)
 
-    train_ids_path = Path(cfg.dataset_root) / "train_ids.json"
-    with train_ids_path.open() as f:
-        train_ids = set(json.load(f))
-
-    test_ids_path = Path(cfg.val_dataset_root) / "test_ids.json"
-    test_ids = None
-    if test_ids_path.exists():
-        with test_ids_path.open() as f:
-            test_ids = set(json.load(f))
-
-    train_ids_orig = train_ids.copy()
-
     dataset = hydra.utils.instantiate(cfg.dataset)
-    train_dataset = get_filtered_dataset(dataset, cfg, train_ids_orig, dataset_name="primary dataset")
-
-    secondary_dataset_root = cfg.get("secondary_dataset_root", None)
-    if secondary_dataset_root is not None:
-        sec_dataset_cfg = copy.deepcopy(cfg.dataset)
-        sec_dataset_cfg.root = secondary_dataset_root
-        secondary_dataset = hydra.utils.instantiate(sec_dataset_cfg)
-        secondary_dataset = get_filtered_dataset(secondary_dataset, cfg, train_ids_orig, dataset_name="secondary dataset")
-        train_dataset = data.ConcatDataset([train_dataset, secondary_dataset])
-
-    # TODO: revisit val_dataset split handling and test_ids.json logic
     val_dataset = hydra.utils.instantiate(cfg.val_dataset)
-    if test_ids is not None:
-        test_ind = [idx for idx in range(len(val_dataset)) if val_dataset.ids[idx] in test_ids]
-        val_dataset = data.Subset(val_dataset, test_ind)
+
+    if cfg.use_train_test_split:
+        train_ids_path = Path(cfg.dataset_root) / "train_ids.json"
+        with train_ids_path.open() as f:
+            train_ids = set(json.load(f))
+
+        test_ids_path = Path(cfg.val_dataset_root) / "test_ids.json"
+        test_ids = None
+        if test_ids_path.exists():
+            with test_ids_path.open() as f:
+                test_ids = set(json.load(f))
+
+        train_ids_orig = train_ids.copy()
+        train_dataset = get_filtered_dataset(dataset, cfg, train_ids_orig, dataset_name="primary dataset")
+
+        secondary_dataset_root = cfg.get("secondary_dataset_root", None)
+        if secondary_dataset_root is not None:
+            sec_dataset_cfg = copy.deepcopy(cfg.dataset)
+            sec_dataset_cfg.root = secondary_dataset_root
+            secondary_dataset = hydra.utils.instantiate(sec_dataset_cfg)
+            secondary_dataset = get_filtered_dataset(secondary_dataset, cfg, train_ids_orig, dataset_name="secondary dataset")
+            train_dataset = data.ConcatDataset([train_dataset, secondary_dataset])
+
+        # TODO: revisit val_dataset split handling and test_ids.json logic
+        if test_ids is not None:
+            test_ind = [idx for idx in range(len(val_dataset)) if val_dataset.ids[idx] in test_ids]
+            val_dataset = data.Subset(val_dataset, test_ind)
+        else:
+            val_dataset = get_filtered_dataset(val_dataset, cfg, train_ids_orig, dataset_name="val dataset")
     else:
-        val_dataset = get_filtered_dataset(val_dataset, cfg, train_ids_orig, dataset_name="val dataset")
+        train_dataset = dataset
+        logger.info(f"Length of actual train set: {len(train_dataset)}")
 
     train_loader = hydra.utils.instantiate(cfg.dataloader, dataset=train_dataset, pin_memory=True)
     # CONSIDER:

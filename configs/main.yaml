@@ -25,6 +25,7 @@ layer_channels: 8
 
 val_dataset_root: dualpm_dataset
 dataset_root: ???
+use_train_test_split: true
 
 train_config:
   steps: 80000

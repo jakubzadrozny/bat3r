@@ -36,3 +36,6 @@ gen_train_set:
   include_estimated_camera: true
   num_views: 2
 
+gen_canonical_dataset:
+  focal_length_range: [50.0, 200.0]
+
