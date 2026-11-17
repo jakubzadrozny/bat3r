@@ -1,3 +1,7 @@
+defaults:
+  - category: horse
+  - _self_
+
 model:
   _target_: bat3r.models.SequentialUnet
   resolution: ${resolution}
@@ -12,23 +16,27 @@ model:
     attn_resolutions:
       - 16
 
+mesh_fitting:
+  algo: ${infer.mesh_fitting.algo}
+  distance_threshold: ${infer.mesh_fitting.distance_threshold}
+
 module:
   _target_: bat3r.pointmaps.PointmapModule
   render_on_module: true
   soft_label: 0.01
+  near: ${near}
+  far: ${far}
   model: ${model}
   device: ${device}
 
-log_dir: checkpoints/bat3r_model
-ckpt_name: weights_80000.pth
-dataset_root: data
-
 data_split_file: dist_group_data_split.npz
-split: test
+
+log_dir: ???
+dataset_root: ???
+split: ???
 
 confidence_threshold: 2.0
 device: cuda
-batch_size: 8
 resolution: 160
 num_layers: 4
 
@@ -41,10 +49,13 @@ dataset:
   render_at_load: false
   scale_targets: false
   return_pcs: true
+  apply_pose_flag: true
+  pose_ext: ${infer.pose_ext}
+  return_vis: ${infer.return_vis}
 
 dataloader:
   _target_: torch.utils.data.DataLoader
   dataset: ???
   batch_size: ${batch_size}
-  num_workers: 4
+  num_workers: 8
   shuffle: false

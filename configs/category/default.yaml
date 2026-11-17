@@ -58,3 +58,10 @@ filter:
     fitting_total_loss: 0.8
     joints_dist: 0.9
     cd_fitted_to_can: 0.9
+
+infer:
+  mesh_fitting:
+    algo: 'greedy'
+    distance_threshold: 0.05
+  pose_ext: npy
+  return_vis: false

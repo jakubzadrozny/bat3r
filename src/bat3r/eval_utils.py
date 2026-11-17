@@ -3,6 +3,7 @@
 # Licensed under BSD-3-Clause.
 
 import time
+from collections.abc import Sequence
 from pathlib import Path
 
 import cv2
@@ -71,6 +72,12 @@ def align_procrustes_new(X, Y, rotation=True, scale=True):
     transform = bones.to_transform(scale_factor, rotation, translation)
     X_transf = bones.__transform(transform, X)
     return X_transf
+
+
+def get_active_joint_indices(num_joints: int, fixed_joints: Sequence[int] | None) -> list[int]:
+    """Return sorted non-fixed joint indices in [0, num_joints), normalizing negative indices."""
+    fixed_set = {j if j >= 0 else num_joints + j for j in (fixed_joints or ())}
+    return [i for i in range(num_joints) if i not in fixed_set]
 
 
 def scale_relative_to(X, centroid, scale):

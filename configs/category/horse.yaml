@@ -49,3 +49,9 @@ filter:
     joints_dist: 0.98
     cd_fitted_to_can: 0.98
 
+infer:
+  mesh_fitting:
+    distance_threshold: 0.1
+  pose_ext: npz
+  return_vis: true
+

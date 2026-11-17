@@ -19,6 +19,7 @@ from bat3r.eval_utils import (
     align_procrustes_new,
     chamfer_dist,
     estimate_camera_pose_new_with_focal,
+    get_active_joint_indices,
     get_view_type,
     load_model,
     get_body_centric_camera_pose,
@@ -96,13 +97,9 @@ def get_metrics_new(output: dict, cfg: DictConfig, output_dir: Path | None = Non
     )
     view_type = get_view_type(spherical_camera_pose["azimuth"])
 
-    # Exclude fixed joints (handling negative indices)
-    num_joints = len(output.shape_data.canonical_joints)
-    fixed_set = {
-        j if j >= 0 else num_joints + j
-        for j in cfg.mesh_fitting.fixed_joints
-    }
-    active_idx = [i for i in range(num_joints) if i not in fixed_set]
+    active_idx = get_active_joint_indices(
+        len(output.shape_data.canonical_joints), cfg.mesh_fitting.fixed_joints
+    )
     canon_subset = output.shape_data.canonical_joints[active_idx]
     posed_subset = joint_pos[active_idx]
 
