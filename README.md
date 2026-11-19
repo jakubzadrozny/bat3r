@@ -29,6 +29,12 @@ Install BAT3R in editable mode:
 pip install -e .
 ```
 
+### Blender Rendering Dependencies
+For synthetic data rendering (`scripts/rendering/`), install `pyyaml` and `tqdm` into Blender's bundled Python interpreter (e.g., Blender 4.x):
+```bash
+/path/to/blender/4.x/python/bin/python3.11 -m pip install --no-user pyyaml tqdm
+```
+
 ## 🧑‍🍳 Data Preparation
 
 Organize your training data as follows:
