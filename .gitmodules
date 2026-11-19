@@ -1,0 +1,3 @@
+[submodule "dualpm_features"]
+	path = dualpm_features
+	url = https://github.com/jakubzadrozny/dualpm_features.git
