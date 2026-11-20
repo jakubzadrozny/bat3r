@@ -55,3 +55,13 @@ infer:
   pose_ext: npz
   return_vis: true
 
+rendering:
+  randomize_textures: true
+  models:
+    horse_female-rd:
+      object: Horse_Female
+      armature: Arm_Horse_Female
+    horse_male-rd:
+      object: Horse_Male
+      armature: Arm_Horse_Male
+

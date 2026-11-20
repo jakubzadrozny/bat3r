@@ -45,3 +45,9 @@ gen_train_set:
   include_estimated_camera: true
   num_views: 3
 
+rendering:
+  models:
+    chimp:
+      object: Chimp
+      armature: Arm_Chimp
+

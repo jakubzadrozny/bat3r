@@ -39,3 +39,9 @@ gen_train_set:
 gen_canonical_dataset:
   focal_length_range: [50.0, 200.0]
 
+rendering:
+  models:
+    elephant:
+      object: Elephant
+      armature: Arm_Elephant
+

@@ -2,17 +2,18 @@
 # Author: Jakub Zadrozny (2026). Licensed under BSD-3-Clause.
 
 # Usage:
-#   ./run_blender_runner.sh <N_GPUS> <DATA_ROOT>
+#   ./run_blender_runner.sh <N_GPUS> <DATA_ROOT> <CATEGORY> [ASSETS_DIR]
 
 set -euo pipefail
 trap 'echo "❌ Error at line $LINENO"; exit 1' ERR
 
-if [ $# -ne 2 ]; then
-    echo "Usage: $0 <N_GPUS> <DATA_ROOT>"
+if [ $# -lt 3 ] || [ $# -gt 4 ]; then
+    echo "Usage: $0 <N_GPUS> <DATA_ROOT> <CATEGORY> [ASSETS_DIR]"
     exit 1
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 cleanup() {
     echo "❌ Cleaning up Blender jobs"
@@ -31,6 +32,20 @@ if [[ -z "$N_GPUS" || "$N_GPUS" -le 0 ]]; then
 fi
 TOTAL_JOBS=$((N_GPUS * JOBS_PER_GPU))
 DATA_ROOT=$2
+CATEGORY=$3
+ASSETS_DIR=${4:-.}
+
+CATEGORY_CONFIG="$REPO_ROOT/configs/category/${CATEGORY}.yaml"
+if [ ! -f "$CATEGORY_CONFIG" ]; then
+    echo "❌ Error: Category config not found: $CATEGORY_CONFIG"
+    exit 1
+fi
+
+BLEND_PATH="$ASSETS_DIR/${CATEGORY}.blend"
+if [ ! -f "$BLEND_PATH" ]; then
+    echo "❌ Error: Blend file not found: $BLEND_PATH"
+    exit 1
+fi
 
 N_CPUS=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 1)
 THREADS=$((N_CPUS / TOTAL_JOBS))
@@ -39,8 +54,10 @@ if [ "$THREADS" -lt 1 ]; then
 fi
 
 echo "Launching job with N_GPUS=$N_GPUS, TOTAL_JOBS=$TOTAL_JOBS"
+echo "Category: $CATEGORY ($BLEND_PATH)"
 echo "Threads per process: $THREADS"
 echo "Data root: $DATA_ROOT"
+echo "Assets dir: $ASSETS_DIR"
 
 # Handle CUDA_VISIBLE_DEVICES mapping to ensure we use the correct physical IDs
 if [ -n "${CUDA_VISIBLE_DEVICES:-}" ]; then
@@ -59,19 +76,23 @@ for i in $(seq 0 $((TOTAL_JOBS - 1))); do
 
     if [ "$i" -gt 0 ]; then
         # Ranks > 0 run silently
-        CUDA_VISIBLE_DEVICES=$PHYSICAL_GPU OMP_NUM_THREADS=$THREADS blender horses.blend \
+        CUDA_VISIBLE_DEVICES=$PHYSICAL_GPU OMP_NUM_THREADS=$THREADS blender "$BLEND_PATH" \
             --threads $THREADS \
             --background \
             --python "$SCRIPT_DIR/blender_render_posed.py" \
             -- $i $TOTAL_JOBS "$DATA_ROOT" \
+            --category-config "$CATEGORY_CONFIG" \
+            --assets-dir "$ASSETS_DIR" \
             > /dev/null 2>&1 & pids+=($!)
     else
         # Rank 0 prints output normally
-        CUDA_VISIBLE_DEVICES=$PHYSICAL_GPU OMP_NUM_THREADS=$THREADS blender horses.blend \
+        CUDA_VISIBLE_DEVICES=$PHYSICAL_GPU OMP_NUM_THREADS=$THREADS blender "$BLEND_PATH" \
             --threads $THREADS \
             --background \
             --python "$SCRIPT_DIR/blender_render_posed.py" \
             -- $i $TOTAL_JOBS "$DATA_ROOT" \
+            --category-config "$CATEGORY_CONFIG" \
+            --assets-dir "$ASSETS_DIR" \
             > /dev/null & pids+=($!)
     fi
 done

@@ -1,5 +1,6 @@
 # Author: Jakub Zadrozny (2026). Licensed under BSD-3-Clause.
 
+import argparse
 import bpy
 import hashlib
 import json
@@ -27,20 +28,6 @@ def handle_exception(exc_type, exc_value, exc_traceback):
 
 sys.excepthook = handle_exception
 
-MODEL_TO_SEX = {
-    'horse_female-rd': 'female',
-    'horse_male-rd': 'male',
-}
-SEXES = ['female', 'male']
-OBJ_NAMES = {
-    'female': 'Horse_Female',
-    'male': 'Horse_Male',
-}
-ARM_NAMES = {
-    'female': 'Arm_Horse_Female',
-    'male': 'Arm_Horse_Male',
-}
-
 CAMERA_FOV_DEG = 60
 
 z_up_to_y_up = Matrix((
@@ -52,30 +39,45 @@ z_up_to_y_up = Matrix((
 
 np.random.seed(42)
 
-# Find separator index
-argv = sys.argv
-argv = argv[argv.index("--") + 1:]  # all arguments after --
-rank = int(argv[0])
-world_size = int(argv[1])
 
-root_dir = Path.cwd()
-textures_dir = root_dir / "textures"
-hdr_dir = root_dir / "hdrs"
+def parse_args():
+    argv = sys.argv
+    argv = argv[argv.index("--") + 1:] if "--" in argv else []
+    parser = argparse.ArgumentParser(description="Render posed meshes in Blender.")
+    parser.add_argument("rank", type=int, help="Worker rank (0-indexed).")
+    parser.add_argument("world_size", type=int, help="Total number of workers.")
+    parser.add_argument("data_root", type=Path, help="Dataset output directory containing poses/metadata/cameras_in/shapes.")
+    parser.add_argument("--category-config", type=Path, required=True, help="Path to configs/category/<category>.yaml.")
+    parser.add_argument("--assets-dir", type=Path, default=Path.cwd(), help="Directory containing .blend, hdrs/, and optional textures/.")
+    return parser.parse_args(argv)
 
-if not len(argv) > 2:
-    raise ValueError("3 args must be provided")
 
-data_root = Path(argv[2])
+args = parse_args()
+rank = args.rank
+world_size = args.world_size
+data_root = args.data_root
 out_dir = data_root
+assets_dir = args.assets_dir
 pose_ext = 'npy'
+
+with args.category_config.open() as f:
+    category_cfg = yaml.safe_load(f)
+
+rendering_cfg = category_cfg.get("rendering")
+if not rendering_cfg or not rendering_cfg.get("models"):
+    raise ValueError(f"Missing 'rendering.models' configuration in {args.category_config}")
+
+MODELS = rendering_cfg["models"]
+
+textures_dir = assets_dir / "textures"
+hdr_dir = assets_dir / "hdrs"
 
 meta_dir = data_root / "metadata"
 pose_dir_in = data_root / "poses"
 cameras_dir_in = data_root / "cameras_in"
+shapes_dir = data_root / "shapes"
 
 # FIND SAMPLES:
-train_ids_path = data_root / "train_ids.json"
-
 cam_suffix = "_camera.txt"
 avail_ids = set()
 with os.scandir(str(cameras_dir_in)) as entries:
@@ -83,10 +85,23 @@ with os.scandir(str(cameras_dir_in)) as entries:
         if entry.is_file() and entry.name.endswith(cam_suffix):
             avail_ids.add(entry.name[:-len(cam_suffix)])
 
-with open(train_ids_path, 'r') as f:
-    train_ids = set(json.load(f))
-
-all_train_file_ids = sorted([cid for cid in avail_ids if cid.split('_')[0] in train_ids])
+train_ids_path = data_root / "train_ids.json"
+if train_ids_path.exists():
+    with train_ids_path.open('r') as f:
+        train_ids = set(json.load(f))
+    all_train_file_ids = sorted([cid for cid in avail_ids if cid.split('_')[0] in train_ids])
+    print(
+        f"Loaded {train_ids_path} ({len(train_ids)} train IDs): "
+        f"using {len(all_train_file_ids)}/{len(avail_ids)} samples",
+        file=sys.stderr,
+    )
+else:
+    all_train_file_ids = sorted(avail_ids)
+    print(
+        f"No {train_ids_path.name} found in {data_root}: "
+        f"using all {len(all_train_file_ids)} samples",
+        file=sys.stderr,
+    )
 print(len(all_train_file_ids), all_train_file_ids[:15])
 
 total = len(all_train_file_ids)
@@ -103,13 +118,32 @@ for dir in [out_dir, renders_dir, masks_dir, cameras_dir]:
         dir.mkdir(exist_ok=True)
 
 
-textures = {
-    sex: sorted(list((textures_dir / sex).glob("*.png")))
-    for sex in SEXES
-}
+textures = {}
+if rendering_cfg.get("randomize_textures", False):
+    for model_name in MODELS:
+        tex_dir = textures_dir / model_name
+        tex_list = sorted(list(tex_dir.glob("*.png")))
+        if not tex_list:
+            raise FileNotFoundError(f"No PNG textures found in {tex_dir}")
+        textures[model_name] = tex_list
+
 hdrs = sorted([p for p in hdr_dir.iterdir() if p.is_file() and p.suffix.lower() in ['.exr', '.hdr']])
+if not hdrs:
+    raise FileNotFoundError(f"No .hdr/.exr files found in {hdr_dir}")
 
 TEXTURE_CACHE = {}
+NODE_NAMES_CACHE = {}
+
+
+def get_node_names(model_name: str) -> list[str]:
+    if model_name not in NODE_NAMES_CACHE:
+        gltf_path = shapes_dir / model_name / f"{model_name}_shape.gltf"
+        if not gltf_path.exists():
+            raise FileNotFoundError(f"Canonical GLTF not found for '{model_name}': {gltf_path}")
+        with gltf_path.open("r", encoding="utf-8") as f:
+            gltf = json.load(f)
+        NODE_NAMES_CACHE[model_name] = [node["name"] for node in gltf["nodes"]]
+    return NODE_NAMES_CACHE[model_name]
 
 
 def set_texture(obj_name, tex_path):
@@ -187,11 +221,14 @@ def read_pose_blender(path: Path):
 
 
 def apply_pose(arm, m_targets, node_names):
+    root_bones = [b.name for b in arm.data.bones if b.parent is None]
+    assert len(root_bones) == 1, f"Expected 1 root bone in {arm.name}, found {root_bones}"
+
     for bone in arm.data.bones:
         bone_index = node_names.index(bone.name)
 
         m_target = m_targets[bone_index]
-        if bone.name == "Base_bone":
+        if bone.parent is None:
             m_target = z_up_to_y_up.inverted() @ m_target
 
         p_bone = arm.pose.bones[bone.name]
@@ -287,13 +324,6 @@ mask_output_node.base_path = str(masks_dir)
 mask_output_node.format.file_format = 'PNG'
 mask_output_node.format.color_mode = 'BW'
 
-# TODO: During category unification, consider deriving node_names on the fly from the
-# canonical .gltf mesh files (or loading per-category node_names alongside the mesh assets).
-node_names = {}
-for s in SEXES:
-    with open(f"node_names_{s}.yaml") as f:
-        node_names[s] = yaml.safe_load(f)
-
 end = min(offset + piece, total)
 for idx in tqdm(range(offset, end), file=sys.stderr):
     file_id = all_train_file_ids[idx]
@@ -301,35 +331,39 @@ for idx in tqdm(range(offset, end), file=sys.stderr):
     with (meta_dir / f"{file_id}_metadata.txt").open() as f:
         meta = yaml.safe_load(f)
 
-    sex = MODEL_TO_SEX[meta["model_name"]]
+    model_name = meta["model_name"]
+    if model_name not in MODELS:
+        raise KeyError(f"Unknown model_name '{model_name}'; configured models: {list(MODELS.keys())}")
+    model_cfg = MODELS[model_name]
 
     cam_data.lens = meta["focal_length"]
     camera_matrix_world_np = np.loadtxt(cameras_dir_in / f"{file_id}_camera.txt")
     camera_matrix_world = Matrix(camera_matrix_world_np)
     cam.matrix_world = camera_matrix_world
 
-    active_obj_name = OBJ_NAMES[sex]
+    active_obj_name = model_cfg["object"]
     active_obj = bpy.data.objects[active_obj_name]
-    active_arm = bpy.data.objects[ARM_NAMES[sex]]
+    active_arm = bpy.data.objects[model_cfg["armature"]]
     active_obj.pass_index = 1
 
     pose_path = pose_dir_in / f"{file_id}_pose.{pose_ext}"
     pose = read_pose_blender(pose_path)
-    apply_pose(active_arm, pose, node_names[sex])
+    apply_pose(active_arm, pose, get_node_names(model_name))
 
-    for s in SEXES:
-        obj_name = OBJ_NAMES[s]
-        arm_name = ARM_NAMES[s]
-        obj = bpy.data.objects[obj_name]
-        arm = bpy.data.objects[arm_name]
+    if len(MODELS) > 1:
+        for m_name, m_cfg in MODELS.items():
+            is_active = (m_name == model_name)
+            obj = bpy.data.objects[m_cfg["object"]]
+            arm = bpy.data.objects[m_cfg["armature"]]
 
-        obj.hide_render = not (s == sex)
-        obj.hide_set(not (s == sex))
-        arm.hide_render = not (s == sex)
-        arm.hide_set(not (s == sex))
+            obj.hide_render = not is_active
+            obj.hide_set(not is_active)
+            arm.hide_render = not is_active
+            arm.hide_set(not is_active)
 
-    texture_idx = sample_texture_idx(file_id, len(textures[sex]))
-    set_texture(active_obj_name, textures[sex][texture_idx])
+    if model_name in textures:
+        texture_idx = sample_texture_idx(file_id, len(textures[model_name]))
+        set_texture(active_obj_name, textures[model_name][texture_idx])
 
     hdr_idx = sample_texture_idx(file_id + "_hdr", len(hdrs))
     rot_deg = sample_texture_idx(file_id + "_rot", 360)
