@@ -60,6 +60,7 @@ filter:
     cd_fitted_to_can: 0.9
 
 infer:
+  split: train
   mesh_fitting:
     algo: 'greedy'
     distance_threshold: 0.05

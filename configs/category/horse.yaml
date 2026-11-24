@@ -50,6 +50,7 @@ filter:
     cd_fitted_to_can: 0.98
 
 infer:
+  split: test
   mesh_fitting:
     distance_threshold: 0.1
   pose_ext: npz

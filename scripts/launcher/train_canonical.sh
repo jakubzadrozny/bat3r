@@ -113,7 +113,6 @@ if [[ $START_STEP -le 3 ]]; then
     python scripts/extract_distrib.py \
         configs=configs/extract_feats.yml \
         "args.test_root=[${DATASET_PATH_ABS}]" \
-        "args.features_out_root=${DATASET_PATH_ABS}" \
         "args.load_pca_path=${PCA_PATH}"
     cd "$REPO_ROOT"
     safe_conda_deactivate
@@ -153,7 +152,6 @@ if [[ $START_STEP -le 5 ]]; then
         check_kerberos
         PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True python scripts/infer.py --config-name infer \
             category="${CATEGORY}" \
-            split="${EVAL_SPLIT}" \
             log_dir="${NEW_MODEL_PATH}" \
             dataset_root="${EVAL_DATASET_PATH}"
         safe_conda_deactivate

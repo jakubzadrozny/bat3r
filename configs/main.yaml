@@ -112,7 +112,7 @@ val_dataset:
   render_at_load: false
   scale_targets: false
   apply_pose_flag: true
-  pose_ext: npy
+  pose_ext: ${infer.pose_ext}
   return_vis: false
 
 val_loader:

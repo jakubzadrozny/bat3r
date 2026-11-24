@@ -378,6 +378,13 @@ def main(cfg: DictConfig):
             test_ids = set(json.load(f))
     else:
         raise ValueError(f"Unknown split: {cfg.split}")
+
+    max_ids = cfg.max_eval_ids.get(cfg.split, None) if cfg.max_eval_ids is not None else None
+    if max_ids is not None and len(test_ids) > max_ids:
+        rng = np.random.default_rng(cfg.seed)
+        sampled = rng.choice(sorted(test_ids), size=max_ids, replace=False)
+        test_ids = set(sampled.tolist())
+        print(f"Subsampled {len(test_ids)} IDs (seed={cfg.seed})")
     print(f"Infer on {len(test_ids)} IDs")
 
     mesh_fitting_cfg = MeshFittingConfig(**OmegaConf.to_container(cfg.mesh_fitting, resolve=True))

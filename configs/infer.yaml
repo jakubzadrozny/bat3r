@@ -33,7 +33,11 @@ data_split_file: dist_group_data_split.npz
 
 log_dir: ???
 dataset_root: ???
-split: ???
+split: ${infer.split}
+seed: 42
+max_eval_ids:
+  train: 1000
+  test: null
 
 confidence_threshold: 2.0
 device: cuda

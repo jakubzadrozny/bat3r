@@ -112,9 +112,6 @@ for ((i=START_ITER; i<=K; i++)); do
         rm -rf "$DATASET_PATH_ABS/shapes"
         ln -sfn "$DATASET_PATH/shapes" "$DATASET_PATH_ABS/shapes"
         ln -sf "$DATASET_PATH/train_ids.json" "$DATASET_PATH_ABS/"
-        if [[ -f "$DATASET_PATH/test_ids.json" ]]; then
-            ln -sf "$DATASET_PATH/test_ids.json" "$DATASET_PATH_ABS/"
-        fi
         safe_conda_deactivate
     fi
 
@@ -141,7 +138,6 @@ for ((i=START_ITER; i<=K; i++)); do
         python scripts/extract_distrib.py \
             configs=configs/extract_feats.yml \
             "args.test_root=[${DATASET_PATH_ABS}]" \
-            "args.features_out_root=${DATASET_PATH_ABS}" \
             "args.load_pca_path=${PCA_PATH}"
         cd "$REPO_ROOT"
         safe_conda_deactivate
@@ -187,16 +183,9 @@ for ((i=START_ITER; i<=K; i++)); do
         safe_conda_activate "$ENV_BAT3R"
         cd "$REPO_ROOT"
         check_kerberos
-        if [[ -n "$EVAL_DATASET_PATH" ]]; then
-            STEP5_SPLIT="${EVAL_SPLIT}"
-            STEP5_DATASET="${EVAL_DATASET_PATH}"
-        else
-            STEP5_SPLIT="train"
-            STEP5_DATASET="${DATASET_PATH_ABS}"
-        fi
+        STEP5_DATASET="${EVAL_DATASET_PATH:-$DATASET_PATH_ABS}"
         PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True python scripts/infer.py --config-name infer \
             category="${CATEGORY}" \
-            split="${STEP5_SPLIT}" \
             log_dir="${NEW_MODEL_PATH}" \
             dataset_root="${STEP5_DATASET}"
         safe_conda_deactivate
