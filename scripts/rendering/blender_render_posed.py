@@ -89,7 +89,9 @@ train_ids_path = data_root / "train_ids.json"
 if train_ids_path.exists():
     with train_ids_path.open('r') as f:
         train_ids = set(json.load(f))
-    all_train_file_ids = sorted([cid for cid in avail_ids if cid.split('_')[0] in train_ids])
+    all_train_file_ids = sorted(
+        [cid for cid in avail_ids if cid in train_ids or cid.rsplit("_", 1)[0] in train_ids]
+    )
     print(
         f"Loaded {train_ids_path} ({len(train_ids)} train IDs): "
         f"using {len(all_train_file_ids)}/{len(avail_ids)} samples",

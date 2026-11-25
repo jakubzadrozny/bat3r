@@ -467,7 +467,11 @@ def get_filtered_dataset(dataset, cfg, base_train_ids, dataset_name="dataset"):
         train_ids = train_ids & valid_ids
         logger.info(f"All {dataset_name} samples: {len(df)}, of which valid: {len(valid_ids)}, of which train: {len(train_ids)}")
     
-    train_ind = [idx for idx, file_id in enumerate(dataset.ids) if file_id.split('_')[0] in train_ids]
+    train_ind = [
+        idx
+        for idx, file_id in enumerate(dataset.ids)
+        if file_id in train_ids or file_id.rsplit("_", 1)[0] in train_ids
+    ]
     filtered_dataset = data.Subset(dataset, train_ind)
     logger.info(f"Length of {dataset_name} train set: {len(filtered_dataset)}")
     return filtered_dataset

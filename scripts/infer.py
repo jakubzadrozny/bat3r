@@ -414,12 +414,14 @@ def main(cfg: DictConfig):
                 f"Expected {len(test_ids)} samples for split '{cfg.split}', found {num_samples}"
             )
     else:
-        test_ind = [
-            idx
-            for idx in range(len(dataset))
-            if dataset.ids[idx].split("_")[0] in test_ids
-        ]
-        found_ids = {dataset.ids[idx].split("_")[0] for idx in test_ind}
+        test_ind = []
+        found_ids = set()
+        for idx in range(len(dataset)):
+            fid = dataset.ids[idx]
+            matched_id = fid if fid in test_ids else fid.rsplit("_", 1)[0]
+            if matched_id in test_ids:
+                test_ind.append(idx)
+                found_ids.add(matched_id)
         missing_ids = test_ids - found_ids
         if missing_ids:
             raise ValueError(
