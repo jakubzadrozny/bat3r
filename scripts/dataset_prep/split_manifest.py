@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import sys
 from collections import defaultdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -141,15 +142,34 @@ def _check_duplicates(
     raise ValueError("\n".join(lines))
 
 
+def _confirm_overwrite(paths: List[Path], overwrite: bool) -> None:
+    """Prompt before overwriting existing output file(s) unless overwrite=True."""
+    existing = [p for p in paths if p.exists()]
+    if not existing or overwrite:
+        return
+    names = ", ".join(str(p) for p in existing)
+    try:
+        resp = input(f"Existing output file(s) found: {names}. Overwrite? [y/N]: ").strip().lower()
+    except EOFError:
+        resp = ""
+    if resp not in ("y", "yes"):
+        print("Aborted — existing files were not modified.")
+        sys.exit(1)
+
+
 def export_manifest(
     dataset_dir: Path,
     out_path: Path,
     raw_imgs_dir: Optional[Path] = None,
+    overwrite: bool = False,
 ) -> Dict[str, Any]:
     dataset_dir = Path(dataset_dir)
+    out_path = Path(out_path)
     metadata_dir = dataset_dir / "metadata"
     if not metadata_dir.is_dir():
         raise FileNotFoundError(f"Metadata directory not found: {metadata_dir}")
+
+    _confirm_overwrite([out_path], overwrite=overwrite)
 
     raw_imgs_index = build_raw_imgs_index(raw_imgs_dir) if raw_imgs_dir is not None else None
     if raw_imgs_index is not None:
@@ -222,6 +242,7 @@ def export_manifest(
 def apply_manifest(
     dataset_dir: Path,
     manifest_path: Path,
+    overwrite: bool = False,
 ) -> Dict[str, List[str]]:
     dataset_dir = Path(dataset_dir)
     metadata_dir = dataset_dir / "metadata"
@@ -242,6 +263,11 @@ def apply_manifest(
             exact_lookup[key] = split_name
 
     _check_duplicates(manifest_occurrences, context=f"manifest '{manifest_path}'")
+
+    _confirm_overwrite(
+        [dataset_dir / f"{split_name}_ids.json" for split_name in manifest_splits],
+        overwrite=overwrite,
+    )
 
     assigned: Dict[str, List[str]] = {split_name: [] for split_name in manifest_splits}
     matched_keys = set()
@@ -305,6 +331,11 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="raw_imgs/ directory (required when exporting legacy image_dataset entries without source_file).",
     )
+    export_parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Overwrite an existing output manifest JSON without prompting.",
+    )
 
     apply_parser = subparsers.add_parser(
         "apply",
@@ -312,6 +343,11 @@ def parse_args() -> argparse.Namespace:
     )
     apply_parser.add_argument("--dataset-dir", type=Path, required=True)
     apply_parser.add_argument("--manifest", type=Path, required=True, help="Input manifest JSON path.")
+    apply_parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Overwrite existing split JSON files without prompting.",
+    )
 
     return parser.parse_args()
 
@@ -323,11 +359,13 @@ def main() -> None:
             dataset_dir=args.dataset_dir,
             out_path=args.out,
             raw_imgs_dir=args.raw_imgs_dir,
+            overwrite=args.overwrite,
         )
     elif args.command == "apply":
         apply_manifest(
             dataset_dir=args.dataset_dir,
             manifest_path=args.manifest,
+            overwrite=args.overwrite,
         )
 
 
