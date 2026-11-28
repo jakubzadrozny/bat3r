@@ -318,7 +318,7 @@ class Producer(Process):
                     inlier_mask=inlier_mask[bidx],
                     canonical_indices=canonical_indices[bidx],
                 )
-                metrics = get_metrics_new(args, cfg=self.cfg, output_dir=self.output_dir)
+                metrics = get_metrics_new(args, cfg=self.cfg)
                 metrics.update(dict(
                     joint_rots_angles_rad=torch.mean(joint_angles_rad[bidx]).item(),
                     joint_rots_angles_rad_sq=torch.mean(torch.square(joint_angles_rad[bidx])).item(),
@@ -357,6 +357,8 @@ def main(cfg: DictConfig):
     weights_path = log_dir / cfg.ckpt_name
     if not weights_path.exists():
         raise FileNotFoundError(f"Weights file not found: {weights_path}")
+    out_dir = Path(cfg.output_dir) if cfg.get("output_dir") is not None else log_dir
+    out_dir.mkdir(parents=True, exist_ok=True)
 
     dataset = hydra.utils.instantiate(cfg.dataset)
     dataset_root = Path(cfg.dataset_root)
@@ -461,9 +463,9 @@ def main(cfg: DictConfig):
     df = pd.DataFrame(rows)
     print(df.mean(numeric_only=True))
     if cfg.split == "test":
-        df.to_csv(log_dir / f"{weights_path.stem}.csv", index=False)
+        df.to_csv(out_dir / f"{weights_path.stem}.csv", index=False)
     elif cfg.split == "train":
-        df.to_csv(log_dir / f"{weights_path.stem}-train.csv", index=False)
+        df.to_csv(out_dir / f"{weights_path.stem}-train.csv", index=False)
 
     for _ in range(num_workers):
         input_q.put(None)

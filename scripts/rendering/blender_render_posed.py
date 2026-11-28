@@ -49,6 +49,12 @@ def parse_args():
     parser.add_argument("data_root", type=Path, help="Dataset output directory containing poses/metadata/cameras_in/shapes.")
     parser.add_argument("--category-config", type=Path, required=True, help="Path to configs/category/<category>.yaml.")
     parser.add_argument("--assets-dir", type=Path, default=Path.cwd(), help="Directory containing .blend, hdrs/, and optional textures/.")
+    parser.add_argument(
+        "--device",
+        choices=["OPTIX", "CUDA", "METAL", "CPU"],
+        default="OPTIX",
+        help="Cycles compute backend (default: OPTIX).",
+    )
     return parser.parse_args(argv)
 
 
@@ -273,8 +279,6 @@ cam_data = cam.data
 cam_data.type = 'PERSP'
 
 render_settings.engine = 'CYCLES'
-scene.cycles.device = 'GPU'
-# scene.cycles.device = 'CPU'
 scene.cycles.samples = 1024
 scene.cycles.use_denoising = False
 # scene.cycles.denoiser = 'OPTIX'
@@ -293,25 +297,29 @@ view_layer.use_pass_vector = False
 view_layer.use_pass_uv = False
 view_layer.use_pass_object_index = True
 
-# Set the device_type
-cycles_prefs = bpy.context.preferences.addons["cycles"].preferences
-cycles_prefs.compute_device_type = "OPTIX"
-cycles_prefs.get_devices()
+if args.device == "CPU":
+    scene.cycles.device = "CPU"
+    print("Active Compute Device: CPU", file=sys.stderr)
+else:
+    scene.cycles.device = "GPU"
+    cycles_prefs = bpy.context.preferences.addons["cycles"].preferences
+    cycles_prefs.compute_device_type = args.device
+    cycles_prefs.get_devices()
 
-found_gpu = False
-for d in cycles_prefs.devices:
-    print(f"Found device: {d.name} ({d.type})", file=sys.stderr)
-    if d.type == 'OPTIX':
-        d.use = True
-        found_gpu = True
-        print(f"✅ Enabled OPTIX Device: {d.name}", file=sys.stderr)
-    else:
-        d.use = False
+    found_gpu = False
+    for d in cycles_prefs.devices:
+        print(f"Found device: {d.name} ({d.type})", file=sys.stderr)
+        if d.type == args.device:
+            d.use = True
+            found_gpu = True
+            print(f"✅ Enabled {args.device} Device: {d.name}", file=sys.stderr)
+        else:
+            d.use = False
 
-if not found_gpu:
-    print("❌ NO OPTIX DEVICES FOUND! Check NVIDIA drivers.", file=sys.stderr)
+    if not found_gpu:
+        print(f"❌ NO {args.device} DEVICES FOUND! Check GPU drivers.", file=sys.stderr)
 
-print(f"Active Compute Device: {cycles_prefs.compute_device_type}", file=sys.stderr)
+    print(f"Active Compute Device: {cycles_prefs.compute_device_type}", file=sys.stderr)
 
 render_settings.use_compositing = True
 render_settings.resolution_x = 512

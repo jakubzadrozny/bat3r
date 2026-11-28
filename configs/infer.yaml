@@ -32,6 +32,7 @@ module:
 data_split_file: dist_group_data_split.npz
 
 log_dir: ???
+output_dir: null  # Where to save evaluation CSV (defaults to log_dir if null)
 dataset_root: ???
 split: ${infer.split}
 seed: 42

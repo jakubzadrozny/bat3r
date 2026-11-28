@@ -44,4 +44,6 @@ rendering:
     elephant:
       object: Elephant
       armature: Arm_Elephant
+      # Sub-meshes to discard on import (matched by object or material name)
+      drop_submeshes: ["African_Elephant_Female_Hair"]
 

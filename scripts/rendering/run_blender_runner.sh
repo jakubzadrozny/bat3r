@@ -2,13 +2,13 @@
 # Author: Jakub Zadrozny (2026). Licensed under BSD-3-Clause.
 
 # Usage:
-#   ./run_blender_runner.sh <N_GPUS> <DATA_ROOT> <CATEGORY> [ASSETS_DIR]
+#   ./run_blender_runner.sh <N_GPUS> <DATA_ROOT> <CATEGORY> [ASSETS_DIR] [EXTRA_BLENDER_SCRIPT_ARGS...]
 
 set -euo pipefail
 trap 'echo "❌ Error at line $LINENO"; exit 1' ERR
 
-if [ $# -lt 3 ] || [ $# -gt 4 ]; then
-    echo "Usage: $0 <N_GPUS> <DATA_ROOT> <CATEGORY> [ASSETS_DIR]"
+if [ $# -lt 3 ]; then
+    echo "Usage: $0 <N_GPUS> <DATA_ROOT> <CATEGORY> [ASSETS_DIR] [EXTRA_ARGS...]"
     exit 1
 fi
 
@@ -23,7 +23,7 @@ cleanup() {
 }
 trap cleanup INT TERM
 
-JOBS_PER_GPU=4
+JOBS_PER_GPU=${JOBS_PER_GPU:-4}
 
 N_GPUS=$1
 if [[ -z "$N_GPUS" || "$N_GPUS" -le 0 ]]; then
@@ -34,6 +34,12 @@ TOTAL_JOBS=$((N_GPUS * JOBS_PER_GPU))
 DATA_ROOT=$2
 CATEGORY=$3
 ASSETS_DIR=${4:-.}
+if [ $# -ge 4 ]; then
+    shift 4
+else
+    shift 3
+fi
+EXTRA_ARGS=("$@")
 
 CATEGORY_CONFIG="$REPO_ROOT/configs/category/${CATEGORY}.yaml"
 if [ ! -f "$CATEGORY_CONFIG" ]; then
@@ -83,6 +89,7 @@ for i in $(seq 0 $((TOTAL_JOBS - 1))); do
             -- $i $TOTAL_JOBS "$DATA_ROOT" \
             --category-config "$CATEGORY_CONFIG" \
             --assets-dir "$ASSETS_DIR" \
+            ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"} \
             > /dev/null 2>&1 & pids+=($!)
     else
         # Rank 0 prints output normally
@@ -93,6 +100,7 @@ for i in $(seq 0 $((TOTAL_JOBS - 1))); do
             -- $i $TOTAL_JOBS "$DATA_ROOT" \
             --category-config "$CATEGORY_CONFIG" \
             --assets-dir "$ASSETS_DIR" \
+            ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"} \
             > /dev/null & pids+=($!)
     fi
 done

@@ -37,6 +37,8 @@ RENDER_ASSETS_DIR="$(to_abs_path "$RENDER_ASSETS_DIR")"
 if [[ -z "$INITIAL_MODEL" ]]; then
     : "${CANON_EXP_NAME:?Set either CANON_EXP_NAME or INITIAL_MODEL}"
     INITIAL_MODEL="${MODELS_ROOT}/${CANON_EXP_NAME}/${CANON_EXP_NAME}_1/${CANON_CKPT}"
+elif [[ -f "$INITIAL_MODEL" ]]; then
+    INITIAL_MODEL="$(to_abs_path "$INITIAL_MODEL")"
 elif [[ "$INITIAL_MODEL" != /* ]]; then
     INITIAL_MODEL="${MODELS_ROOT}/${INITIAL_MODEL}"
 fi
